@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TRY YOUR LUCK</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      color: white;
+    }
+    /* Logo styling */
+    #rkLogo {
+      width: 160px;
+      margin-bottom: 15px;
+      border-radius: 12px;
+      display: block;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 120px);
+      gap: 15px;
+      justify-content: center;
+      margin-top: 20px;
+    }
+
+    .grid button {
+      width: 120px;
+      height: 120px;
+      font-size: 22px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(145deg, #1e3c72, #2a5298);
+      color: #fff;
+      box-shadow: 6px 6px 12px #0d1b2a, -6px -6px 12px #3a506b;
+      transition: transform 0.2s ease;
+    }
+
+    .grid button:active { transform: scale(0.95); }
+
+    #result { margin-top: 20px; font-size: 20px; }
+
+    #playAgain {
+      margin-top: 25px;
+      padding: 12px 24px;
+      font-size: 18px;
+      border: none;
+      border-radius: 20px;
+      background: linear-gradient(145deg, #ff512f, #dd2476);
+      color: white;
+      box-shadow: 6px 6px 12px #0d1b2a, -6px -6px 12px #3a506b;
+      display: none;
+      cursor: pointer;
+    }
+    #playAgain:hover { transform: scale(1.05); }
+
+    #nameInputContainer { margin-bottom: 20px; }
+
+    #showLeaderboard {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 15px;
+      background: linear-gradient(145deg, #00c6ff, #0072ff);
+      color: white;
+      cursor: pointer;
+      display: none;
+    }
+    #showLeaderboard:hover { transform: scale(1.05); }
+    /* Popup overlay */
+    #leaderboardOverlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    /* Popup container with AI 3D background */
+    #leaderboardPopup {
+      background: linear-gradient(145deg, #1f1c2c, #928dab);
+      padding: 20px;
+      border-radius: 20px;
+      width: 450px;
+      box-shadow: 
+        0 0 20px #00c6ff, 
+        0 0 40px #0072ff, 
+        0 0 60px #00c6ff;
+      color: white;
+      text-align: center;
+      backdrop-filter: blur(10px);
+      border: 2px solid rgba(255,255,255,0.2);
+    }
+
+    #leaderboardPopup table {
+      width: 100%;
+      border-collapse: collapse;
+      color: white;
+    }
+    #leaderboardPopup th, #leaderboardPopup td {
+      padding: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    #closeLeaderboard {
+      margin-top: 15px;
+      padding: 8px 20px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(145deg, #ff512f, #dd2476);
+      color: white;
+      cursor: pointer;
+    }
+
+    #resetTimer { font-size: 14px; color: #00c6ff; }
+  </style>
+</head>
+<body>
+    <!-- RK Games Logo -->
+<img id="rkLogo" src="rk-games-logo.png" alt="RK Games Logo">
+  <h1>TRY YOUR LUCK</h1>
+
+  <div id="nameInputContainer">
+    <input type="text" id="playerName" placeholder="Enter your name" style="padding:8px; border-radius:5px;">
+    <button onclick="startGame()" style="padding:8px 15px; border-radius:5px;">Start Game</button>
+  </div>
+
+  <div class="grid" id="grid" style="display:none;"></div>
+  <div id="result"></div>
+  <button id="playAgain">Play Again</button>
+  <button id="showLeaderboard">Show Leaderboard</button>
+  <!-- Popup Leaderboard -->
+  <div id="leaderboardOverlay">
+    <div id="leaderboardPopup">
+      <h2>Leaderboard <span id="resetTimer"></span></h2>
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Attempts</th><th>Total Score</th><th>Best Score</th></tr>
+        </thead>
+        <tbody id="leaderboardBody"></tbody>
+      </table>
+      <button id="closeLeaderboard" onclick="closeLeaderboard()">Close</button>
+    </div>
+  </div>
+  <script>
+  let totalScore = 0;
+  let jackpotIndex;
+  let playerName = "";
+  let leaderboard = JSON.parse(localStorage.getItem("leaderboard")) || {};
+  let resetInterval = 60 * 60 * 1000; // 1 hour
+  let nextResetTime = localStorage.getItem("nextResetTime");
+
+  // Initialize fixed reset time
+  if (!nextResetTime) {
+    nextResetTime = Date.now() + resetInterval;
+    localStorage.setItem("nextResetTime", nextResetTime);
+  } else {
+    nextResetTime = parseInt(nextResetTime, 10);
+  }
+
+  // Ensure valid numeric fields
+  for (const name in leaderboard) {
+    if (typeof leaderboard[name].attempts !== "number") leaderboard[name].attempts = 0;
+    if (typeof leaderboard[name].score !== "number") leaderboard[name].score = 0;
+    if (typeof leaderboard[name].best !== "number") leaderboard[name].best = 0;
+  }
+
+  function startGame() {
+    playerName = document.getElementById("playerName").value.trim().toUpperCase();
+    if (!playerName) { alert("Please enter your name!"); return; }
+    document.getElementById("nameInputContainer").style.display = "none";
+    document.getElementById("grid").style.display = "grid";
+    document.getElementById("showLeaderboard").style.display = "inline-block";
+    createGrid();
+  }
+
+  function createGrid() {
+    const grid = document.getElementById("grid");
+    grid.innerHTML = "";
+    totalScore = 0;
+    document.getElementById("result").textContent = "";
+    document.getElementById("playAgain").style.display = "none";
+
+    const numbers = [];
+    for (let i = 1; i < 9; i++) numbers.push(i);
+    numbers.sort(() => Math.random() - 0.5);
+
+    jackpotIndex = Math.floor(Math.random() * 9);
+
+    for (let i = 0; i < 9; i++) {
+      const btn = document.createElement("button");
+      if (i === jackpotIndex) {
+        btn.onclick = () => revealJackpot(btn);
+      } else {
+        const num = numbers.pop();
+        btn.onclick = () => revealNumber(btn, num);
+      }
+      grid.appendChild(btn);
+    }
+  }
+
+  function revealNumber(button, number) {
+    button.textContent = number;
+    button.disabled = true;
+    totalScore += number;
+    document.getElementById("result").textContent = "Current score: " + totalScore;
+  }
+
+  function revealJackpot(button) {
+    button.textContent = "$";
+    button.style.color = "yellow";
+    button.disabled = true;
+    document.getElementById("result").textContent = "Your total score is: " + totalScore + ". You hit the jackpot!";
+    disableAllButtons();
+    document.getElementById("playAgain").style.display = "inline-block";
+    saveScore();
+  }
+
+  function disableAllButtons() {
+    document.querySelectorAll("#grid button").forEach(btn => btn.disabled = true);
+  }
+
+  function saveScore() {
+    if (!leaderboard[playerName]) {
+      leaderboard[playerName] = { attempts: 0, score: 0, best: 0 };
+    }
+    leaderboard[playerName].attempts += 1;
+    leaderboard[playerName].score += totalScore;
+    if (totalScore > leaderboard[playerName].best) {
+      leaderboard[playerName].best = totalScore;
+    }
+    localStorage.setItem("leaderboard", JSON.stringify(leaderboard));
+  }
+
+  function updateLeaderboard() {
+    leaderboard = JSON.parse(localStorage.getItem("leaderboard")) || {};
+    const body = document.getElementById("leaderboardBody");
+    body.innerHTML = "";
+    const sorted = Object.entries(leaderboard).sort((a, b) => b[1].score - a[1].score);
+    sorted.forEach(([name, data]) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `<td>${name}</td><td>${data.attempts}</td><td>${data.score}</td><td>${data.best}</td>`;
+      body.appendChild(row);
+    });
+  }
+
+  // Show leaderboard popup
+  document.getElementById("showLeaderboard").onclick = function() {
+    updateLeaderboard();
+    document.getElementById("leaderboardOverlay").style.display = "flex";
+  };
+
+  // Close leaderboard popup
+  function closeLeaderboard() {
+    document.getElementById("leaderboardOverlay").style.display = "none";
+  }
+
+  // Reset leaderboard every hour (fixed countdown)
+  setInterval(() => {
+    if (Date.now() >= nextResetTime) {
+      localStorage.removeItem("leaderboard");
+      leaderboard = {};
+      nextResetTime = Date.now() + resetInterval;
+      localStorage.setItem("nextResetTime", nextResetTime);
+      updateLeaderboard();
+      alert("Leaderboard has been reset!");
+    }
+  }, 1000); // check every second
+
+  // Countdown timer display
+  setInterval(() => {
+    let remaining = nextResetTime - Date.now();
+    if (remaining < 0) remaining = 0;
+    let minutes = Math.floor(remaining / 60000);
+    let seconds = Math.floor((remaining % 60000) / 1000);
+    document.getElementById("resetTimer").textContent =
+      `(Resets in ${minutes}m ${seconds}s)`;
+  }, 1000);
+
+  // Play again button
+  document.getElementById("playAgain").onclick = createGrid;
+</script>
+</body>
+</html>
